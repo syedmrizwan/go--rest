@@ -1,11 +1,21 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gorilla/mux"
+
+	"github.com/golang-migrate/migrate"
+	"github.com/golang-migrate/migrate/database/postgres"
+
+	_ "github.com/golang-migrate/migrate/source/file"
+	_ "github.com/lib/pq"
 )
 
 type health struct {
@@ -13,8 +23,48 @@ type health struct {
 	Messages []string `json:"messages"`
 }
 
+type jsonError struct {
+	Code string `json:"code"`
+	Msg  string `json:"msg"`
+}
+
 func main() {
+	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatalf("Error making DB connected: %s", err.Error())
+	}
+
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		log.Fatalf("Error making DB driver: %s", err.Error())
+	}
+
+	migrator, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres",
+		driver,
+	)
+	if err != nil {
+		log.Fatalf("Error making migration engine: %s", err.Error())
+	}
+	migrator.Steps(2)
+
 	r := mux.NewRouter()
+
+	r.HandleFunc("/book/{isbn}",
+		func(w http.ResponseWriter, r *http.Request) {
+			v := mux.Vars(r)
+
+			e := jsonError{
+				Code: "001",
+				Msg:  fmt.Sprintf("No book with ISBN %s", v["isbn"]),
+			}
+
+			b, _ := json.Marshal(e)
+
+			w.WriteHeader(http.StatusNotFound)
+			w.Write(b)
+		})
 
 	r.HandleFunc(
 		"/healthcheck",
