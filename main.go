@@ -28,6 +28,14 @@ type jsonError struct {
 	Msg  string `json:"msg"`
 }
 
+type Book struct {
+	ISBN          string `json:"isbn"`
+	Title         string `json:"title"`
+	Image         string `json:"image"`
+	Genre         string `json:"genre"`
+	YearPublished int    `json:"year_published"`
+}
+
 func main() {
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -54,16 +62,35 @@ func main() {
 	r.HandleFunc("/book/{isbn}",
 		func(w http.ResponseWriter, r *http.Request) {
 			v := mux.Vars(r)
+			isbn := v["isbn"]
+			b := Book{}
 
-			e := jsonError{
-				Code: "001",
-				Msg:  fmt.Sprintf("No book with ISBN %s", v["isbn"]),
+			row := db.QueryRow("SELECT isbn, name, image, genre, year_published FROM book WHERE isbn = $1", isbn)
+			err := row.Scan(
+				&b.ISBN,
+				&b.Title,
+				&b.Image,
+				&b.Genre,
+				&b.YearPublished,
+			)
+
+			if err != nil {
+				e := jsonError{
+					Code: "001",
+					Msg:  fmt.Sprintf("No book with ISBN %s", isbn),
+				}
+				body, _ := json.Marshal(e)
+
+				w.WriteHeader(http.StatusNotFound)
+				w.Write(body)
+				return
 			}
 
-			b, _ := json.Marshal(e)
+			body, _ := json.Marshal(b)
 
-			w.WriteHeader(http.StatusNotFound)
-			w.Write(b)
+			w.WriteHeader(http.StatusOK)
+			w.Write(body)
+
 		})
 
 	r.HandleFunc(
